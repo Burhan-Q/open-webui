@@ -155,81 +155,6 @@ class ScheduledTaskExecutionResponse(BaseModel):
 # Table Classes
 ##############################
 
-# class ScheduledTasksTable:
-#     def insert_new_scheduled_task(
-#         self, user_id: str, form_data: ScheduledTaskForm
-#     ) -> Optional[ScheduledTaskModel]:
-#         task_id = str(int(time.time() * 1000))  # simple unique id, replace with uuid if desired
-#         now = int(time.time())
-#         scheduled_task = ScheduledTaskModel(
-#             id=task_id,
-#             user_id=user_id,
-#             prompt=form_data.prompt,
-#             model=form_data.model,
-#             schedule=form_data.schedule,
-#             enabled=form_data.enabled if form_data.enabled is not None else True,
-#             last_run_at=None,
-#             next_run_at=None,
-#             created_at=now,
-#             updated_at=now,
-#         )
-#         try:
-#             with get_db() as db:
-#                 task_row = ScheduledTask(**scheduled_task.model_dump())
-#                 db.add(task_row)
-#                 db.commit()
-#                 db.refresh(task_row)
-#                 if task_row:
-#                     return ScheduledTaskModel.model_validate(task_row)
-#                 else:
-#                     return None
-#         except Exception as e:
-#             log.exception(f"Error creating scheduled task: {e}")
-#             return None
-
-#     def get_scheduled_task_by_id(self, id: str) -> Optional[ScheduledTaskModel]:
-#         try:
-#             with get_db() as db:
-#                 task = db.get(ScheduledTask, id)
-#                 return ScheduledTaskModel.model_validate(task)
-#         except Exception:
-#             return None
-
-#     def get_scheduled_tasks(self, user_id: Optional[str] = None) -> list[ScheduledTaskModel]:
-#         with get_db() as db:
-#             query = db.query(ScheduledTask)
-#             if user_id:
-#                 query = query.filter_by(user_id=user_id)
-#             return [
-#                 ScheduledTaskModel.model_validate(task)
-#                 for task in query.all()
-#             ]
-
-#     def update_scheduled_task_by_id(self, id: str, updated: dict) -> Optional[ScheduledTaskModel]:
-#         with get_db() as db:
-#             try:
-#                 db.query(ScheduledTask).filter_by(id=id).update(
-#                     {
-#                         **updated,
-#                         "updated_at": int(time.time()),
-#                     }
-#                 )
-#                 db.commit()
-#                 return self.get_scheduled_task_by_id(id)
-#             except Exception:
-#                 return None
-
-#     def delete_scheduled_task_by_id(self, id: str) -> bool:
-#         with get_db() as db:
-#             try:
-#                 db.query(ScheduledTask).filter_by(id=id).delete()
-#                 db.commit()
-#                 return True
-#             except Exception:
-#                 return False
-
-# ScheduledTasks = ScheduledTasksTable()
-
 class ScheduledTasksTable:
     def insert_new_scheduled_task(
         self, user_id: str, form_data: ScheduledTaskForm
@@ -302,3 +227,44 @@ class ScheduledTasksTable:
                 return False
 
 ScheduledTasks = ScheduledTasksTable()
+
+
+class ScheduledTaskHistory:
+    def log_execution(
+        self,
+        scheduled_task_id: str,
+        status: str,
+        response: Optional[str] = None,
+        error_message: Optional[str] = None,
+    ) -> Optional[ScheduledTaskExecutionModel]:
+        now = int(time.time())
+        execution = ScheduledTaskExecutionModel(
+            id=str(now),
+            scheduled_task_id=scheduled_task_id,
+            run_at=now,
+            status=status,
+            response=response,
+            error_message=error_message,
+            created_at=now,
+        )
+        try:
+            with get_db() as db:
+                result = ScheduledTaskExecution(**execution.model_dump())
+                db.add(result)
+                db.commit()
+                db.refresh(result)
+                return ScheduledTaskExecutionModel.model_validate(result) if result else None
+        except Exception as e:
+            log.exception(f"Error logging scheduled task execution: {e}")
+            return None
+
+    def get_execution_history(
+        self, scheduled_task_id: str, limit: Optional[int] = 10
+    ) -> list[ScheduledTaskExecutionModel]:
+        with get_db() as db:
+            query = db.query(ScheduledTaskExecution).filter_by(scheduled_task_id=scheduled_task_id).order_by(ScheduledTaskExecution.run_at.desc())
+            if limit:
+                query = query.limit(limit)
+            return [ScheduledTaskExecutionModel.model_validate(execution) for execution in query.all()]
+
+ScheduledTaskHistory = ScheduledTaskHistory()

@@ -34,6 +34,12 @@ from open_webui.config import (
 )
 from open_webui.env import SRC_LOG_LEVELS
 
+from open_webui.models.scheduled_task import (
+    ScheduledTaskForm,
+    ScheduledTasks,
+    ScheduledTaskHistory,
+    ScheduledTaskExecutionResponse,
+)
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["MODELS"])
@@ -676,3 +682,94 @@ async def generate_moa_response(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={"detail": str(e)},
         )
+
+
+@router.post("/scheduled-tasks", response_model=ScheduledTaskForm)
+async def create_scheduled_task(
+    request: Request, form_data: ScheduledTaskForm, user=Depends(get_verified_user)
+):
+    task = ScheduledTasks.insert_new_scheduled_task(user.id, form_data)
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create scheduled task",
+        )
+    return task
+
+
+@router.get("/scheduled-tasks", response_model=list[ScheduledTaskForm])
+async def list_scheduled_tasks(request: Request, user=Depends(get_verified_user)):
+    return ScheduledTasks.get_scheduled_tasks(user.id)
+
+
+@router.get("/scheduled-tasks/{id}", response_model=ScheduledTaskForm)
+async def get_scheduled_task(
+    request: Request, id: str, user=Depends(get_verified_user)
+):
+    task = ScheduledTasks.get_scheduled_task_by_id(id)
+    if not task or task.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Scheduled task not found"
+        )
+    return task
+
+
+@router.put("/scheduled-tasks/{id}", response_model=ScheduledTaskForm)
+async def update_scheduled_task(
+    request: Request, id: str, form_data: ScheduledTaskForm, user=Depends(get_verified_user)
+):
+    task = ScheduledTasks.get_scheduled_task_by_id(id)
+    if not task or task.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Scheduled task not found"
+        )
+    updated_task = ScheduledTasks.update_scheduled_task_by_id(id, form_data.model_dump())
+    if not updated_task:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update scheduled task",
+        )
+    return updated_task
+
+
+@router.delete("/scheduled-tasks/{id}")
+async def delete_scheduled_task(
+    request: Request, id: str, user=Depends(get_verified_user)
+):
+    task = ScheduledTasks.get_scheduled_task_by_id(id)
+    if not task or task.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Scheduled task not found"
+        )
+    if not ScheduledTasks.delete_scheduled_task_by_id(id):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete scheduled task",
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/scheduled-tasks/{id}/run")
+async def run_scheduled_task(
+    request: Request, id: str, user=Depends(get_verified_user)
+):
+    task = ScheduledTasks.get_scheduled_task_by_id(id)
+    if not task or task.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Scheduled task not found"
+        )
+    # Here you would trigger the task manually
+    # For now, we'll just return a success message
+    return {"detail": "Task triggered successfully"}
+
+
+@router.get("/scheduled-tasks/{id}/executions", response_model=list[ScheduledTaskExecutionResponse])
+async def list_scheduled_task_executions(
+    request: Request, id: str, user=Depends(get_verified_user), limit: Optional[int] = 10
+):
+    task = ScheduledTasks.get_scheduled_task_by_id(id)
+    if not task or task.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Scheduled task not found"
+        )
+    return ScheduledTaskHistory.get_execution_history(id, limit)

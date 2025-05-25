@@ -2,11 +2,16 @@
 import asyncio
 from typing import Dict
 from uuid import uuid4
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from open_webui.models.scheduled_task import ScheduledTasks, ScheduledTaskHistory
 
 # A dictionary to keep track of active tasks
 tasks: Dict[str, asyncio.Task] = {}
 chat_tasks = {}
 
+# Initialize the scheduler
+scheduler = AsyncIOScheduler()
+scheduler.start()
 
 def cleanup_task(task_id: str, id=None):
     """
@@ -79,3 +84,52 @@ async def stop_task(task_id: str):
         return {"status": True, "message": f"Task {task_id} successfully stopped."}
 
     return {"status": False, "message": f"Failed to stop task {task_id}."}
+
+
+def job_handler(task_id: str):
+    """
+    Job handler to execute the scheduled task.
+    """
+    task = ScheduledTasks.get_scheduled_task_by_id(task_id)
+    if not task:
+        return
+
+    # Simulate sending the prompt to the selected model
+    try:
+        # Here you would integrate with the actual model and send the prompt
+        response = f"Executed task {task_id} with prompt: {task.content.prompt}"
+        status = "success"
+        error_message = None
+    except Exception as e:
+        response = None
+        status = "failure"
+        error_message = str(e)
+
+    # Log the execution result
+    ScheduledTaskHistory.log_execution(
+        scheduled_task_id=task_id,
+        status=status,
+        response=response,
+        error_message=error_message,
+    )
+
+
+def schedule_task(task_id: str, schedule: str):
+    """
+    Schedule a task to be executed at the specified time.
+    """
+    scheduler.add_job(job_handler, "cron", id=task_id, **schedule, args=[task_id])
+
+
+def reschedule_task(task_id: str, schedule: str):
+    """
+    Reschedule an existing task.
+    """
+    scheduler.reschedule_job(task_id, trigger="cron", **schedule)
+
+
+def remove_task(task_id: str):
+    """
+    Remove a scheduled task.
+    """
+    scheduler.remove_job(task_id)
